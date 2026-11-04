@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Grabbit",
+  "version": "1.0.0",
+  "identifier": "com.haizarakun.grabbit",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Grabbit",
+        "width": 1040,
+        "height": 700,
+        "minWidth": 480,
+        "minHeight": 420,
+        "dragDropEnabled": false,
+        "visible": false,
+        "backgroundColor": "#0f1115"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "app",
+      "dmg",
+      "appimage",
+      "deb"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMzNkU3Q0IwRjNCREFGRUQKUldUdHI3M3pzSHh1TTZ4K0pnTXVZZ1Zybk1qUUdlb0RPaXBzWnJOcUZVS2RSYnk4MHZHQmFzeHEK",
+      "endpoints": [
+        "https://github.com/haizarakun/Grabbit/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

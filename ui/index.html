@@ -1,0 +1,949 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grabbit</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<!--
+  画面の文言は日本語で書き、i18n.js がその日本語をキーにして各言語へ置き換える。
+  動的な文言は app.js の t("日本語") で同じ辞書を使う。
+-->
+<body>
+  <aside class="sidebar">
+    <div class="brand"><span class="logo">⬇</span><span class="brand-name">Grabbit</span></div>
+    <nav class="nav" aria-label="メニュー">
+      <button data-tab="jobs" class="active"><span class="ico">⬇</span><span class="label">ダウンロード</span><span id="nav-badge" class="nav-badge hidden"></span></button>
+      <button data-tab="presets"><span class="ico">★</span><span class="label">保存プリセット</span></button>
+      <button data-tab="library"><span class="ico">▦</span><span class="label">ライブラリ</span></button>
+      <button data-tab="logs"><span class="ico">≡</span><span class="label">ログ</span></button>
+      <button data-tab="sites"><span class="ico">◎</span><span class="label">対応サイト</span></button>
+      <button data-tab="about"><span class="ico">ⓘ</span><span class="label">作者</span></button>
+      <button data-tab="settings"><span class="ico">⚙</span><span class="label">設定</span></button>
+    </nav>
+    <div class="sidebar-foot">
+      <button id="open-folder" class="save-location" title="保存先を開く">
+        <span class="save-label">保存先</span>
+        <span id="save-drive" class="save-drive"></span>
+        <span id="save-path" class="save-path"></span>
+      </button>
+      <small id="disk-status" class="muted"></small>
+      <small id="power-status" class="muted hidden">省電力中</small>
+      <small id="ytdlp-version-short" class="muted"></small>
+      <small id="app-version-short" class="muted"></small>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div id="setup" class="banner hidden"></div>
+    <div id="low-space" class="banner warn hidden">保存先の空き容量が少ないため、新しいダウンロードを止めています。空きを増やすか、設定で下限を変えてください。</div>
+    <div id="app-update" class="banner update hidden">
+      <span id="app-update-text"></span>
+      <button id="app-update-install" class="small">更新して再起動</button>
+      <button id="app-update-later" class="small ghost-light">あとで</button>
+    </div>
+
+    <!-- ───── ダウンロード ───── -->
+    <section id="tab-jobs" class="tab">
+      <div class="url-card" id="drop-zone">
+        <textarea id="url" rows="1" placeholder="URL を貼り付け・ドロップ、またはキーワードで検索" aria-autocomplete="list" aria-controls="url-suggest"></textarea>
+        <ul id="url-suggest" class="url-suggest hidden" role="listbox"></ul>
+        <button id="go" class="primary">調べる</button>
+      </div>
+      <div class="preset-bar">
+        <span class="preset-bar-title">保存のしかた</span>
+        <div class="presets" id="pv-presets"></div>
+      </div>
+      <div class="sites-strip" id="sites"></div>
+      <div id="analyze-status" class="analyze-status hidden" role="status" aria-live="polite"></div>
+      <section id="search-results" class="search-results hidden"></section>
+
+      <section id="preview" class="preview hidden">
+        <img id="pv-thumb" class="pv-thumb" alt="">
+        <div class="pv-body">
+          <div class="pv-site">
+            <img id="pv-icon" alt=""><span id="pv-sitename"></span>
+            <span class="badge ok">ダウンロードできます</span>
+            <span id="pv-saved" class="badge saved hidden"></span>
+          </div>
+          <div id="pv-title" class="pv-title"></div>
+          <div id="pv-meta" class="muted"></div>
+          <div id="pv-notice" class="notice hidden"></div>
+          <div id="pv-exists" class="notice warn hidden"></div>
+          <div class="segmented" id="pv-modes"></div>
+          <div class="segmented hidden" id="pv-live" role="group" aria-label="配信の録り方">
+            <button type="button" data-live="start">最初から録る</button>
+            <button type="button" data-live="now" class="active">今から録る</button>
+          </div>
+          <div id="pv-thumbs" class="thumb-picker hidden"></div>
+          <div id="pv-playlist" class="playlist-picker hidden"></div>
+          <div class="pv-actions">
+            <select id="pv-format" title="保存する形式"></select>
+            <select id="pv-audio-format" title="音声の形式" class="hidden">
+              <option value="mp3">MP3</option><option value="m4a">M4A</option><option value="opus">Opus</option>
+              <option value="flac">FLAC</option><option value="wav">WAV</option>
+            </select>
+            <button id="pv-download" class="primary">ダウンロード</button>
+          </div>
+          <div class="pv-links">
+            <button id="pv-subscribe" class="ghost small hidden">このチャンネルを自動保存に登録</button>
+            <button id="pv-channel-playlists" class="ghost small hidden">このチャンネルの再生リスト一覧</button>
+            <button id="pv-later" class="ghost small">後で保存に入れる</button>
+            <button id="pv-toggle-options" class="ghost small">細かく決める(上級者向け) ▾</button>
+          </div>
+        </div>
+        <button id="pv-close" class="ghost close" title="閉じる">✕</button>
+        <div id="pv-options" class="pv-options hidden">
+          <div class="grid2">
+            <div class="fn-field"><span class="fn-title">ファイル名</span><div id="fn-preview" class="fn-host"></div><input type="hidden" id="opt-filename"></div>
+            <label>保存先<input id="opt-output"></label>
+            <label>動画の形式
+              <select id="opt-container"><option value="mp4">MP4</option><option value="mkv">MKV</option><option value="webm">WebM</option></select>
+            </label>
+            <label>字幕
+              <select id="opt-subs">
+                <option value="none">付けない</option>
+                <option value="embed">動画に埋め込む</option>
+                <option value="file">別ファイルで保存</option>
+                <option value="both">埋め込み + 別ファイル</option>
+                <option value="burn">映像に焼き付ける</option>
+              </select>
+            </label>
+            <label id="opt-sub-langs-label">字幕の言語<select id="opt-sub-langs" multiple size="5"></select><small>Ctrl / ⌘ で複数選択 <button type="button" id="opt-sub-more" class="ghost small hidden"></button></small></label>
+            <label>一部だけ保存(時間指定)<input id="opt-sections" placeholder="*00:01:00-00:02:30"></label>
+            <label>予約(この日時に始める)<input id="opt-start-at" type="datetime-local"></label>
+            <label>始める条件
+              <select id="opt-start-when">
+                <option value="">すぐ(順番が来たら)</option>
+                <option value="alone">ほかのダウンロードが終わってから</option>
+                <option value="idle">PC を使っていない時(5 分操作がない時)</option>
+              </select>
+            </label>
+            <label id="opt-items-label">プレイリストの範囲(例: 1-10,15)<input id="opt-items"></label>
+            <label>地域(タイトル・サムネイルが地域で違う時)
+              <select id="opt-region" class="region-select"></select>
+            </label>
+          </div>
+          <div class="checks">
+            <label class="check"><input type="checkbox" id="opt-embed-thumb"> サムネイルを埋め込む</label>
+            <label class="check"><input type="checkbox" id="opt-metadata"> タイトル・チャプター等を埋め込む</label>
+            <label class="check"><input type="checkbox" id="opt-sponsor"> スポンサー区間を自動カット (YouTube)</label>
+            <label class="check"><input type="checkbox" id="opt-thumb-file"> サムネイルを別ファイルで保存</label>
+            <label class="check"><input type="checkbox" id="opt-vr"> VR・360°動画として保存</label>
+            <label class="check"><input type="checkbox" id="opt-comments"> コメントを保存</label>
+            <label class="check"><input type="checkbox" id="opt-live-chat"> ライブのチャットを保存</label>
+          </div>
+        </div>
+      </section>
+
+      <div class="toolbar">
+        <div id="job-summary" class="summary" aria-live="polite"></div>
+        <div class="toolbar-actions">
+          <button id="clear" class="ghost small">完了分を消す</button>
+          <details class="menu">
+            <summary title="まとめて操作">⋯</summary>
+            <div id="bulk-actions" class="menu-items"></div>
+          </details>
+        </div>
+      </div>
+      <details id="later-box" class="later-box">
+        <summary></summary>
+        <ul id="later-list" class="later-list"></ul>
+        <div class="row"><button id="later-all" class="primary small">全部保存する</button><button id="later-clear" class="ghost small">全部消す</button></div>
+      </details>
+      <div id="select-bar" class="select-bar hidden" role="toolbar" aria-label="選んだものの操作"></div>
+      <div id="job-groups"></div>
+      <div id="jobs-empty" class="empty">
+        <div class="empty-icon">⬇</div>
+        <p>URL を貼るだけ。何がダウンロードできるか調べてから保存します。</p>
+      </div>
+    </section>
+
+    <!-- ───── ライブラリ(保存したもの) ───── -->
+    <section id="tab-presets" class="tab hidden">
+      <h2>保存プリセット</h2>
+      <p class="muted">ダウンロード画面の「保存のしかた」に並ぶ設定です。中身を細かく変えたり、新しく作ったりできます。「設定に従う」の項目は、設定画面の値を使います。</p>
+      <div class="preset-editor">
+        <div class="preset-list-box">
+          <ul id="preset-list" class="preset-list"></ul>
+          <button id="preset-new" class="ghost">＋ 新しいプリセット</button>
+        </div>
+        <div id="preset-form" class="preset-form"></div>
+      </div>
+    </section>
+
+    <section id="tab-library" class="tab hidden">
+      <h2>ライブラリ</h2>
+      <p class="muted">これまでに保存したもの。開く・探す・削除がここでできます。</p>
+      <div class="library-bar">
+        <input id="lib-search" type="search" placeholder="タイトル・ファイル名で検索">
+        <select id="lib-kind">
+          <option value="">すべての種類</option>
+          <option value="video">動画</option>
+          <option value="audio">音声だけ</option>
+          <option value="thumbnail">サムネイルだけ</option>
+          <option value="file">ファイル・画像</option>
+          <option value="duplicates">重複(二重に保存したもの)</option>
+          <option value="trash">ごみ箱にあるもの</option>
+        </select>
+        <select id="lib-uploader" title="投稿者"></select>
+        <select id="lib-length" title="長さ">
+          <option value="">すべての長さ</option><option value="0-60">1分まで</option><option value="60-600">1〜10分</option>
+          <option value="600-3600">10〜60分</option><option value="3600-">1時間以上</option>
+        </select>
+        <select id="lib-quality" title="画質">
+          <option value="">すべての画質</option><option value="2160-">4K</option><option value="1080-2159">1080p 以上</option>
+          <option value="720-1079">720p</option><option value="1-719">720p 未満</option>
+        </select>
+        <select id="lib-size" title="大きさ">
+          <option value="">すべての大きさ</option><option value="0-104857600">100MB まで</option>
+          <option value="104857600-1073741824">100MB〜1GB</option><option value="1073741824-">1GB 以上</option>
+        </select>
+        <select id="lib-drive" title="ドライブ"></select>
+        <select id="lib-folder" title="フォルダ"></select>
+        <select id="lib-sort">
+          <option value="new">新しい順</option>
+          <option value="old">古い順</option>
+          <option value="name">名前順</option>
+          <option value="size">大きい順</option>
+        </select>
+        <button id="lib-dedupe" class="primary hidden">新しい方だけ残して整理</button>
+        <button id="lib-rename" class="ghost">名前を付け直す</button>
+        <button id="lib-verify" class="ghost">まとめて検査</button>
+        <button id="lib-sources" class="ghost">元のページを確認</button>
+        <button id="lib-move" class="ghost">別のフォルダへ移す</button>
+        <button id="lib-refetch" class="primary hidden">壊れたものを取り直す</button>
+        <button id="lib-clean" class="ghost">見つからないものを一覧から消す</button>
+      </div>
+      <div id="rename-panel" class="rename-panel hidden">
+        <div class="fn-label">新しい名前のひな形(押すと入ります)</div>
+        <div id="rename-tokens" class="fn-parts"></div>
+        <input id="rename-pattern" spellcheck="false">
+        <ul id="rename-preview" class="rename-preview"></ul>
+        <div class="row"><small id="rename-count" class="muted"></small><span class="spacer"></span><button id="rename-run" class="primary">名前を変える</button></div>
+      </div>
+      <div id="verify-status" class="muted"></div>
+      <div id="lib-summary" class="muted"></div>
+      <ul id="library" class="library"></ul>
+      <div id="library-empty" class="empty"><div class="empty-icon">▦</div><p>まだ保存したものはありません。</p></div>
+    </section>
+
+    <!-- ───── ログ ───── -->
+    <section id="tab-logs" class="tab hidden">
+      <h2>ログ</h2>
+      <p class="muted">ダウンロードごとの詳しい記録です。うまくいかない時の原因がここで分かります。</p>
+      <div class="library-bar">
+        <input id="log-search" type="search" placeholder="タイトル・URL で検索">
+        <label class="check"><input type="checkbox" id="log-errors-only"> エラーだけ</label>
+        <button id="log-refresh" class="ghost">更新</button>
+        <button id="log-folder" class="ghost">フォルダを開く</button>
+        <button id="log-clear" class="ghost">すべて消す</button>
+        <button id="log-stats" class="ghost">エラーの統計</button>
+      </div>
+      <div id="error-stats" class="error-stats hidden"></div>
+      <div class="log-layout">
+        <ul id="log-list" class="log-list"></ul>
+        <div class="log-view">
+          <div class="log-view-head">
+            <span id="log-title" class="muted">左から選んでください</span>
+            <span class="spacer"></span>
+            <label class="check"><input type="checkbox" id="log-raw"> 原文で表示</label>
+            <button id="log-copy" class="ghost small">コピー</button>
+            <button id="log-copy-safe" class="ghost small" title="ユーザー名・メールアドレス・IP アドレスなどを消してコピーします">個人情報を消してコピー</button>
+          </div>
+          <pre id="log-text" class="log-text"></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───── 作者 ───── -->
+    <section id="tab-about" class="tab hidden">
+      <div class="about-card">
+        <div class="about-logo">⬇</div>
+        <div>
+          <h2>Grabbit</h2>
+          <div class="muted">バージョン <span id="about-version"></span></div>
+          <div class="muted">作者: haizarakun</div>
+        </div>
+      </div>
+      <div class="about-links">
+        <button class="link-card" data-url="https://github.com/haizarakun/Grabbit">
+          <span class="link-icon">⌂</span><span><b>GitHub リポジトリ</b><small>ソースコード・新しい版</small></span>
+        </button>
+        <button class="link-card" data-url="https://github.com/haizarakun/Grabbit/releases">
+          <span class="link-icon">⇩</span><span><b>リリース</b><small>これまでの版と変更点</small></span>
+        </button>
+        <button class="link-card" data-url="https://discord.gg/hXv7G3xtVf">
+          <span class="link-icon">◆</span><span><b>Discord</b><small>質問・不具合の報告・要望・お知らせ</small></span>
+        </button>
+      </div>
+      <div class="row"><button id="guide-open" class="ghost small">使い方ガイドを見る</button><button id="notes-open" class="ghost small">この版の変更点</button></div>
+      <fieldset>
+        <legend>ヘルプ(よくある質問)</legend>
+        <input id="faq-search" type="search" placeholder="知りたいことを入力(例: ログイン、遅い、字幕)">
+        <div id="faq" class="faq"></div>
+      </fieldset>
+      <fieldset>
+        <legend>アプリの更新</legend>
+        <div class="row"><small id="about-update-status" class="muted">起動するたびに新しい版を確認し、あれば自動で入れて再起動します。</small><span class="spacer"></span><button id="about-update-check" class="ghost">今すぐ確認</button></div>
+      </fieldset>
+      <fieldset>
+        <legend>使っているもの</legend>
+        <p class="muted small-text">Grabbit は次のオープンソースのソフトを使っています。</p>
+        <div class="credits">
+          <button class="ghost small" data-url="https://github.com/yt-dlp/yt-dlp">yt-dlp</button>
+          <button class="ghost small" data-url="https://github.com/mikf/gallery-dl">gallery-dl</button>
+          <button class="ghost small" data-url="https://ffmpeg.org/">FFmpeg</button>
+          <button class="ghost small" data-url="https://deno.com/">Deno</button>
+          <button class="ghost small" data-url="https://tauri.app/">Tauri</button>
+        </div>
+        <p class="muted small-text">公式の配布元は GitHub の haizarakun/Grabbit だけです。ほかの場所の「Grabbit」は非公式なので入れないでください。</p>
+        <p class="muted small-text">ライセンス: MIT(「Grabbit」の名前とアイコンは除く)。DRM で保護された動画は保存できません。各サイトの利用規約と著作権法を守って使ってください。</p>
+      </fieldset>
+    </section>
+
+    <!-- ───── 対応サイト ───── -->
+    <section id="tab-sites" class="tab hidden">
+      <h2>対応サイト</h2>
+      <p class="muted">動画・音声・画像・ファイルの直リンクに対応。保存できる方法を順に自動で試します。</p>
+      <div class="url-card">
+        <input id="site-search" placeholder="サイト名で検索(例: niconico, pixiv, twitch)">
+      </div>
+      <div class="toolbar">
+        <span id="site-count" class="muted"></span>
+        <label class="check"><input type="checkbox" id="site-hide-broken"> 不調のサイトを隠す</label>
+      </div>
+      <ul id="site-list" class="site-list"></ul>
+    </section>
+
+    <!-- ───── 設定 ───── -->
+    <section id="tab-settings" class="tab hidden">
+      <div class="settings-head">
+        <h2>設定</h2>
+        <button type="button" id="settings-update-check" class="primary small">本体アップデート</button>
+        <input id="settings-search" type="search" placeholder="設定を検索">
+        <span id="saved" class="saved muted"></span>
+      </div>
+      <div class="settings-layout">
+      <nav id="settings-index" class="settings-index"></nav>
+      <form id="settings">
+        <fieldset id="sec-app">
+          <legend>本体アップデート</legend>
+          <div class="app-update-card">
+            <div>
+              <b>Grabbit 本体</b> <small class="muted" id="app-version-now"></small>
+              <div><small id="app-version-status" class="muted"></small></div>
+            </div>
+            <span class="spacer"></span>
+            <label class="switch" title="自動アップデート">
+              <input type="checkbox" name="auto_update_app">
+              <span class="switch-track" aria-hidden="true"></span>
+              <span>自動アップデート</span>
+            </label>
+            <button type="button" id="app-update-check" class="primary">今すぐ確認</button>
+          </div>
+        </fieldset>
+        <fieldset id="sec-ui">
+          <legend>表示・言語</legend>
+          <div class="grid2">
+            <label>言語
+              <select data-ui="language" id="language-select"></select>
+            </label>
+            <label>テーマ
+              <select data-ui="theme">
+                <option value="system">OS に合わせる</option>
+                <option value="light">ライト</option>
+                <option value="dark">ダーク</option>
+                <option value="midnight">ミッドナイト(真っ黒)</option>
+                <option value="ocean">オーシャン</option>
+                <option value="forest">フォレスト</option>
+                <option value="sepia">セピア</option>
+                <option value="contrast">ハイコントラスト</option>
+              </select>
+            </label>
+            <label>アクセントカラー<input data-ui="accent" type="color"></label>
+            <label>背景の色<span class="input-row"><input data-color="custom_bg" type="color"><button type="button" class="ghost small color-reset" data-for="custom_bg">テーマに戻す</button></span></label>
+            <label>パネルの色<span class="input-row"><input data-color="custom_panel" type="color"><button type="button" class="ghost small color-reset" data-for="custom_panel">テーマに戻す</button></span></label>
+            <label>文字の色<span class="input-row"><input data-color="custom_text" type="color"><button type="button" class="ghost small color-reset" data-for="custom_text">テーマに戻す</button></span></label>
+            <label>文字の大きさ<input data-ui="font_size" type="range" min="12" max="18" step="1"></label>
+            <label>一覧の見た目
+              <select data-ui="list_style">
+                <option value="list">リスト</option>
+                <option value="cards">サムネイル大きめ</option>
+                <option value="compact">コンパクト</option>
+                <option value="large">サムネイル特大</option>
+              </select>
+            </label>
+            <label>一覧の見出しに出すもの
+              <select data-ui="primary_text">
+                <option value="title">動画タイトル</option>
+                <option value="filename">ファイル名</option>
+                <option value="url">URL</option>
+              </select>
+            </label>
+            <label>エラーの表示
+              <select data-ui="error_style">
+                <option value="friendly">わかりやすい説明</option>
+                <option value="raw">原文そのまま</option>
+                <option value="both">両方</option>
+              </select>
+            </label>
+          </div>
+          <div class="checks">
+            <label class="check"><input type="checkbox" data-ui="show_thumbnail"> サムネイル</label>
+            <label class="check"><input type="checkbox" data-ui="show_favicon"> サイトのアイコン</label>
+            <label class="check"><input type="checkbox" data-ui="show_url"> URL</label>
+            <label class="check"><input type="checkbox" data-ui="show_path"> 保存先のパス</label>
+            <label class="check"><input type="checkbox" data-ui="show_speed"> 速度・残り時間</label>
+            <label class="check"><input type="checkbox" data-ui="show_engine"> 取得方法</label>
+            <label class="check"><input type="checkbox" data-ui="show_site_strip"> 対応サイトのアイコン列</label>
+            <label class="check"><input type="checkbox" data-ui="auto_analyze"> URL を貼ったらすぐ調べる</label>
+            <label class="check"><input type="checkbox" data-ui="collapse_done"> 完了した項目は最初から畳む</label>
+            <label class="check"><input type="checkbox" data-ui="show_nav_labels"> サイドバーに文字を出す</label>
+            <label class="check"><input type="checkbox" data-ui="split_view"> 広い画面では、ダウンロードとライブラリを左右に並べる</label>
+            <label class="check"><input type="checkbox" data-ui="reduce_motion"> 動き(アニメーション)を減らす</label>
+            <label>終わった時の音
+              <select data-ui="sound">
+                <option value="off">鳴らさない</option>
+                <option value="chime">チャイム</option>
+                <option value="beep">ピッ</option>
+                <option value="pop">ポン</option>
+              </select>
+            </label>
+            <div class="fn-label span-all">左のメニュー(チェックで表示、矢印で並べ替え)</div>
+            <ul id="nav-editor" class="nav-editor span-all"></ul>
+          </div>
+          <label>見た目を自由に変える(CSS)
+            <textarea data-ui="custom_css" rows="5" spellcheck="false" placeholder=":root { --accent: #e91e63; --radius: 4px; }&#10;.job .title { font-size: 1.1em; }"></textarea>
+            <small>ここに書いた CSS がそのまま画面に適用されます。色・角の丸さ・余白など何でも変えられます。</small>
+          </label>
+        </fieldset>
+
+        <fieldset id="sec-basic">
+          <legend>基本</legend>
+          <label>保存先
+            <div class="row"><input name="output_dir"><button type="button" id="pick-output" class="ghost">選ぶ</button><button type="button" id="open-dir" class="ghost">開く</button></div>
+          </label>
+          <div class="grid2">
+            <label>画質
+              <select name="preset">
+                <option value="best">最高画質</option>
+                <option value="2160">4K まで</option>
+                <option value="1080">1080p まで</option>
+                <option value="720">720p まで</option>
+                <option value="audio_mp3">音声のみ (MP3)</option>
+                <option value="audio_m4a">音声のみ (M4A)</option>
+              </select>
+            </label>
+            <label>保存するもの(既定)<select name="mode" id="settings-mode"></select></label>
+            <label>音声の形式
+              <select name="audio_format">
+                <option value="mp3">MP3</option><option value="m4a">M4A</option><option value="opus">Opus</option>
+                <option value="flac">FLAC</option><option value="wav">WAV</option>
+              </select>
+            </label>
+            <label>自動保存の確認間隔(分)<input name="check_interval_minutes" type="number" min="15"></label>
+          </div>
+        </fieldset>
+
+        <fieldset id="sec-tools">
+          <legend>部品(ダウンロード機能など)</legend>
+          <div class="grid2">
+            <label>ダウンロード機能の更新チャンネル
+              <select name="update_channel">
+                <option value="stable">stable(安定版)</option>
+                <option value="nightly">nightly(毎日更新・おすすめ)</option>
+                <option value="master">master(最新・不安定)</option>
+              </select>
+            </label>
+          </div>
+          <div class="row"><small id="ytdlp-version"></small><span class="spacer"></span><button type="button" id="update-now" class="ghost">今すぐ更新</button><button type="button" id="repair-tools" class="ghost">部品を点検・修復</button></div>
+          <div class="row">
+            <label class="check"><input type="checkbox" name="pin_ytdlp"> ダウンロード機能を自動で更新しない(今の版のまま使う)</label>
+            <span class="spacer"></span>
+            <button type="button" id="ytdlp-changelog" class="ghost small">変更点を見る</button>
+            <button type="button" id="ytdlp-rollback" class="ghost small">前の版に戻す</button>
+          </div>
+          <div id="changelog" class="changelog hidden"></div>
+          <h4>部品ごとの管理</h4>
+          <div id="tool-list" class="tool-list"></div>
+          <div class="row">
+            <input id="repo-add-input" placeholder="持ち主/リポジトリ名(例: yt-dlp/yt-dlp)">
+            <button type="button" id="repo-add" class="ghost">取得元を追加</button>
+          </div>
+          <small class="muted">追加した取得元は、各部品の「取得元」から選べます。中身が安全かどうかは自分で確かめてください(壊れたファイルは、そのリポジトリのハッシュ一覧と照らして使いません)。</small>
+        </fieldset>
+
+
+        <fieldset id="sec-login">
+          <legend>ログインが必要な動画用</legend>
+          <p class="muted">会員限定・年齢制限・非公開などの動画を保存する時に使います。普段はログインなしで保存し、必要な時だけ使います。</p>
+          <div class="grid2">
+            <label>ログインの方法
+              <select name="cookies_browser">
+                <option value="">使わない</option>
+                <option value="grabbit">Grabbit の中でログイン(おすすめ)</option>
+                <option value="firefox">Firefox のログインを使う</option>
+                <option value="chrome">Chrome のログインを使う</option>
+                <option value="edge">Edge のログインを使う</option>
+                <option value="brave">Brave のログインを使う</option>
+                <option value="opera">Opera のログインを使う</option>
+                <option value="vivaldi">Vivaldi のログインを使う</option>
+                <option value="safari">Safari のログインを使う</option>
+              </select>
+              <small>Chrome / Edge は仕組み上ほとんど読めません。「Grabbit の中でログイン」が確実です。</small>
+            </label>
+            <label>使わないログイン情報を自動で消す日数<input name="login_expire_days" type="number" min="0" max="365"><small>0 で消さない</small></label>
+            <label class="check"><input type="checkbox" data-ui="auto_relogin"> ログインが切れて失敗したら、ログイン画面を自動で開く</label>
+            <label>ログイン情報を使う場面
+              <select name="cookies_when">
+                <option value="needed">有料・会員限定などログインが必要な時だけ</option>
+                <option value="always">いつも使う</option>
+              </select>
+            </label>
+          </div>
+          <div id="login-lock" class="login-lock hidden">
+            <p>ログイン情報には合言葉がかかっています。</p>
+            <div class="input-row"><input id="login-unlock-pass" type="password" autocomplete="current-password" placeholder="合言葉"><button type="button" id="login-unlock" class="primary small">開く</button></div>
+            <small id="login-unlock-status" class="muted"></small>
+          </div>
+          <div id="login-panel">
+            <div class="fn-label">ログインするサイト</div>
+            <div id="login-sites-quick" class="login-quick"></div>
+            <div class="url-card"><input id="login-url" placeholder="ほかのサイトの URL"><button type="button" id="login-open" class="ghost">ログイン画面を開く</button></div>
+            <small class="muted">開いた画面でいつも通りログインして、終わったらその画面を閉じるだけです。パスワードは Grabbit には保存されません。</small>
+            <div class="fn-label">ログイン済み</div>
+            <ul id="login-list" class="login-list"></ul>
+            <div class="row"><button type="button" id="login-password" class="ghost small">合言葉をかける・変える</button><small class="muted">ログイン済みのサイトを見る・ログインし直す時に合言葉を求めます</small></div>
+          </div>
+        </fieldset>
+
+        <fieldset id="sec-subs">
+          <legend>自動保存</legend>
+      <p class="muted">チャンネルやプレイリストの URL を入れると、新しく投稿されたものを決まった間隔で確認して保存します。サイトは自動で判別します。</p>
+      <div id="sub-form" class="sub-form">
+        <div class="url-card">
+          <textarea id="sub-url" rows="2" placeholder="チャンネル / プレイリストの URL(改行で区切ればいくつでもまとめて登録できます)"></textarea>
+          <button type="button" id="sub-add" class="primary">登録</button>
+        </div>
+        <div class="grid2">
+          <label>保存するもの<select id="sub-mode"></select></label>
+          <label>グループ<input id="sub-group" list="sub-groups" placeholder="例: 音楽、ゲーム(空欄で未分類)"><datalist id="sub-groups"></datalist></label>
+          <label>画質
+            <select id="sub-preset">
+              <option value="best">最高画質</option><option value="2160">4K まで</option>
+              <option value="1080">1080p まで</option><option value="720">720p まで</option>
+            </select>
+          </label>
+        </div>
+        <div class="checks">
+          <label class="check"><input type="checkbox" id="sub-new-only" checked> 今後の新着だけ保存する(過去の動画は落とさない)</label>
+          <label class="check"><input type="checkbox" id="sub-record-live"> 配信が始まったら自動で録画する</label>
+          <label class="check"><input type="checkbox" id="sub-notify-only"> 新着を知らせるだけ(保存は自分で押す)</label>
+          <label class="check" id="sub-skip-shorts-label"><input type="checkbox" id="sub-skip-shorts"> ショート動画を除外</label>
+          <label class="check" id="sub-skip-live-label"><input type="checkbox" id="sub-skip-live"> ライブ配信・配信予定を除外</label>
+        </div>
+      </div>
+      <div class="toolbar">
+        <span id="sub-interval" class="muted"></span>
+        <button type="button" id="sub-check" class="ghost">今すぐ確認</button>
+      </div>
+      <ul id="subs" class="jobs"></ul>
+      <div id="subs-empty" class="empty"><div class="empty-icon">↻</div><p>まだ登録がありません。</p></div>
+            </fieldset>
+
+          <fieldset id="sec-desktop">
+            <legend>常駐・通知・予約・更新</legend>
+            <div class="checks">
+              <label class="check"><input type="checkbox" name="watch_clipboard"> URL をコピーしたら入力欄にすぐ入れる</label>
+              <label class="check"><input type="checkbox" name="close_to_tray"> 閉じてもタスクトレイに残って動き続ける</label>
+              <label class="check"><input type="checkbox" name="notify_done"> 保存が終わったら通知する</label>
+            </div>
+            <div class="grid2">
+              <label>省電力モード
+                <select name="power_saver">
+                  <option value="auto">バッテリーの時だけ</option>
+                  <option value="on">いつも</option>
+                  <option value="off">使わない</option>
+                </select>
+                <small>同時ダウンロードを1件にし、自動確認の回数を減らします。</small>
+              </label>
+              <label>空き容量がこれを下回ったら止める(GB、0 で無効)<input name="min_free_gb" type="number" min="0"></label>
+              <label>保存済みの動画をまた保存しようとした時
+                <select name="on_duplicate">
+                  <option value="ask">確認する</option>
+                  <option value="skip">飛ばす</option>
+                  <option value="allow">そのまま保存する</option>
+                </select>
+              </label>
+            </div>
+            <div class="row"><small class="muted">エクスプローラーでファイルを右クリック →「送る」→ Grabbit で、URL のショートカットやリストを渡せます。</small><span class="spacer"></span><button type="button" id="add-send-to" class="ghost">「送る」メニューに追加</button></div>
+            <label>ダウンロードする時間帯(空欄でいつでも)<input name="active_hours" placeholder="01:00-06:00">
+              <small>例: 01:00-06:00 なら夜中だけ、22:00-06:00 のように日またぎもできます。予約は保存のしかたの「予約」で日時を選べます。</small>
+            </label>
+          </fieldset>
+
+          <fieldset id="sec-quality">
+            <legend>画質・形式</legend>
+            <div class="grid2">
+              <label>音声の言語
+                <select name="audio_language">
+                  <option value="">サイトの標準</option>
+                  <option value="ja">日本語</option><option value="en">英語</option><option value="ko">韓国語</option>
+                  <option value="zh">中国語</option><option value="es">スペイン語</option><option value="fr">フランス語</option>
+                  <option value="de">ドイツ語</option><option value="pt">ポルトガル語</option><option value="ru">ロシア語</option>
+                </select>
+                <small>吹き替えなど、音声が何か国語かある動画で使います</small>
+              </label>
+              <label class="check"><input type="checkbox" name="all_audio_tracks"> 音声トラックを全部入れて保存する(MKV になります)</label>
+              <label>動画の形式
+                <select name="container"><option value="mp4">MP4(どこでも再生可)</option><option value="mkv">MKV(高品質)</option></select>
+              </label>
+              <label>優先する映像コーデック
+                <select name="video_codec">
+                  <option value="any">おまかせ</option><option value="h264">H.264(互換性重視)</option>
+                  <option value="vp9">VP9</option><option value="av1">AV1(高圧縮)</option>
+                </select>
+              </label>
+              <label>音声のビットレート(例: 192K、空欄で最高)<input name="audio_bitrate"></label>
+              <label>動画の再エンコード
+                <select name="recode_video">
+                  <option value="">しない(速い)</option><option value="mp4">MP4</option><option value="mkv">MKV</option>
+                  <option value="webm">WebM</option><option value="mov">MOV</option>
+                </select>
+              </label>
+            </div>
+            <label class="check"><input type="checkbox" name="keep_original"> 変換後も元のファイルを残す</label>
+            <label class="check"><input type="checkbox" name="prefer_free_formats"> 同じ画質ならフリーな形式(WebM 等)を優先</label>
+          </fieldset>
+
+          <fieldset id="sec-post">
+            <legend>埋め込み・後処理</legend>
+            <div class="checks">
+              <label class="check"><input type="checkbox" name="embed_thumbnail"> サムネイルを埋め込む</label>
+              <label class="check"><input type="checkbox" name="embed_metadata"> タイトル・チャプター等を埋め込む</label>
+              <label class="check"><input type="checkbox" name="embed_subtitles"> 字幕を埋め込む</label>
+              <label class="check"><input type="checkbox" name="split_chapters"> チャプターごとにファイルを分ける</label>
+              <label class="check"><input type="checkbox" name="sponsorblock_remove"> スポンサー区間を自動カット (YouTube)</label>
+              <label class="check"><input type="checkbox" name="embed_source_info"> 保存日と元のページをファイルの情報に入れる</label>
+              <label class="check"><input type="checkbox" name="music_tags"> 音楽の曲名・アーティスト・アルバムをネットのデータベースで補う</label>
+              <label class="check"><input type="checkbox" name="embed_lyrics"> 歌詞が見つかれば音楽ファイルに入れる</label>
+              <label class="check"><input type="checkbox" name="music_bpm_key"> 音楽のテンポ(BPM)とキーを調べて入れる</label>
+              <label class="check"><input type="checkbox" name="music_track_numbers"> プレイリストの曲に番号を振る</label>
+            </div>
+            <label>動画の縦横を合わせる(黒帯を足す)
+              <select name="pad_aspect">
+                <option value="">そのまま</option>
+                <option value="16:9">横長(16:9)にする — 縦長動画をテレビ・PC向けに</option>
+                <option value="9:16">縦長(9:16)にする — 横長動画をスマホ・ショート向けに</option>
+              </select>
+              <small>作り直すので時間がかかります</small>
+            </label>
+            <label>カットする区間<input name="sponsorblock_categories"><small>sponsor, selfpromo, interaction, intro, outro, preview, music_offtopic, filler</small></label>
+          </fieldset>
+
+          <fieldset id="sec-subtitles">
+            <legend>字幕・追加ファイル</legend>
+            <div class="grid2">
+              <div class="fn-field"><span class="fn-title">字幕の言語</span><div id="sub-lang-picker" class="lang-picker"></div><input type="hidden" name="subtitle_langs"></div>
+              <label>字幕の形式
+                <select name="subtitle_format">
+                  <option value="">そのまま</option><option value="srt">SRT</option><option value="vtt">VTT</option>
+                  <option value="ass">ASS</option><option value="lrc">LRC</option>
+                </select>
+              </label>
+              <label>サムネイルの形式
+                <select name="convert_thumbnail">
+                  <option value="">そのまま</option><option value="jpg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option>
+                </select>
+              </label>
+            </div>
+            <div class="checks">
+              <label class="check"><input type="checkbox" name="auto_subtitles"> 自動生成字幕も使う</label>
+              <label class="check"><input type="checkbox" name="burn_subtitles"> 字幕を映像に焼き付ける</label>
+              <label class="check"><input type="checkbox" name="clean_auto_subs"> 自動生成字幕の重なり・細切れを整える</label>
+            </div>
+            <label>字幕のよくある間違いを直す(1行に「間違い→正しい」)<textarea name="subtitle_fixes" rows="3" placeholder="こんにちわ→こんにちは&#10;ゆーちゅーぶ→YouTube"></textarea></label>
+            <div class="checks">
+            </div>
+            <div class="grid2">
+              <label>字幕を翻訳して取る(YouTube の自動翻訳)
+                <select name="subtitle_translate_to">
+                  <option value="">しない</option>
+                  <option value="ja">日本語へ</option><option value="en">英語へ</option><option value="ko">韓国語へ</option>
+                  <option value="zh-Hans">中国語(簡体)へ</option><option value="zh-Hant">中国語(繁体)へ</option>
+                  <option value="es">スペイン語へ</option><option value="fr">フランス語へ</option><option value="de">ドイツ語へ</option>
+                  <option value="pt">ポルトガル語へ</option><option value="ru">ロシア語へ</option>
+                </select>
+              </label>
+              <label>焼き付ける字幕の大きさ<input name="burn_font_size" type="number" min="0" max="96"><small>0 で標準</small></label>
+              <label>焼き付ける字幕の色
+                <select name="burn_color"><option value="">白</option><option value="yellow">黄色</option><option value="cyan">水色</option></select>
+              </label>
+              <label>焼き付ける字幕の位置
+                <select name="burn_position"><option value="bottom">下</option><option value="top">上</option></select>
+              </label>
+              <label class="check"><input type="checkbox" name="write_subtitle_file"> 字幕を別ファイルでも保存</label>
+              <label class="check"><input type="checkbox" name="write_thumbnail_file"> サムネイルを別ファイルで保存</label>
+              <label class="check"><input type="checkbox" name="write_description"> 概要欄を保存</label>
+              <label class="check"><input type="checkbox" name="write_info_json"> 動画情報(JSON)を保存</label>
+              <label class="check"><input type="checkbox" name="write_comments"> コメントを保存</label>
+              <label class="check"><input type="checkbox" name="write_live_chat"> ライブのチャットを保存</label>
+              <label class="check"><input type="checkbox" name="write_url_link"> 元ページへのショートカットを保存</label>
+              <label class="check"><input type="checkbox" name="embed_info_json"> 動画情報を動画ファイルに埋め込む(MKV)</label>
+              <label class="check"><input type="checkbox" name="write_all_thumbnails"> サムネイルを全サイズ保存</label>
+              <label class="check"><input type="checkbox" name="write_playlist_files"> プレイリスト自体の情報も保存</label>
+            </div>
+          </fieldset>
+
+          <fieldset id="sec-filter">
+            <legend>絞り込み</legend>
+            <p class="muted">チャンネルやプレイリストをまとめて保存する時に、条件に合わないものを飛ばします。1本だけ保存する時は気にしなくて大丈夫です。</p>
+            <div class="checks">
+              <label class="check"><input type="checkbox" name="skip_shorts"> ショート動画を飛ばす</label>
+              <label class="check"><input type="checkbox" name="skip_live"> ライブ配信・配信予定を飛ばす</label>
+            </div>
+            <label>プレイリストを落とす順番
+              <select name="playlist_order">
+                <option value="">サイトの並び(新しい順が多い)</option>
+                <option value="reverse">逆順(古い順が多い)</option>
+              </select>
+            </label>
+            <div class="grid2">
+              <label>投稿された時期
+                <select name="date_after">
+                  <option value="">いつでも</option>
+                  <option value="now-7days">1週間以内</option>
+                  <option value="now-30days">1か月以内</option>
+                  <option value="now-365days">1年以内</option>
+                </select>
+              </label>
+              <label>1回に保存する本数の上限<input name="max_downloads" type="number" min="0"><small>0 で上限なし</small></label>
+              <label>小さすぎるファイルを飛ばす
+                <select name="min_filesize">
+                  <option value="">飛ばさない</option><option value="1M">1MB 未満</option>
+                  <option value="10M">10MB 未満</option><option value="100M">100MB 未満</option>
+                </select>
+              </label>
+              <label>大きすぎるファイルを飛ばす
+                <select name="max_filesize">
+                  <option value="">飛ばさない</option><option value="500M">500MB より大きい</option>
+                  <option value="1G">1GB より大きい</option><option value="2G">2GB より大きい</option><option value="4G">4GB より大きい</option>
+                </select>
+              </label>
+            </div>
+            <details class="advanced">
+              <summary>上級者向け</summary>
+              <div class="grid2">
+                <label>プレイリストの何本目を保存するか<input name="playlist_items" placeholder="1-10,15"><small>例: 1-10,15 = 1〜10本目と15本目</small></label>
+                <label>動画の一部だけ保存<input name="download_sections" placeholder="*00:01:00-00:02:30"><small>例: *00:01:00-00:02:30 = 1分〜2分30秒</small></label>
+              </div>
+              <label>条件式<input name="match_filter" placeholder="duration > 60 & view_count > 1000"><small>例: duration > 60 = 1分より長いものだけ</small></label>
+            </details>
+          </fieldset>
+
+          <fieldset id="sec-files">
+            <legend>保存先・ファイル名</legend>
+            <div class="fn-field"><span class="fn-title">ファイル名・フォルダ分け</span><div id="fn-settings" class="fn-host"></div><input type="hidden" name="filename_template"></div>
+            <div class="fn-label">保存先の自動振り分け(上から順に調べ、最初に当てはまったフォルダへ)</div>
+            <ul id="folder-rules" class="folder-rules"></ul>
+            <button type="button" id="folder-rule-add" class="ghost small">＋ ルールを追加</button>
+            <label>保存先に同じ名前のファイルがあった時
+              <select name="on_same_name">
+                <option value="skip">飛ばす(保存しない)</option>
+                <option value="rename">番号を付けて別の名前で保存</option>
+                <option value="overwrite">上書きする</option>
+              </select>
+            </label>
+            <div class="checks">
+              <label class="check"><input type="checkbox" name="restrict_filenames"> ファイル名を英数字だけにする(古い機器で文字化けする時に)</label>
+              <label class="check"><input type="checkbox" name="use_archive"> 一度保存した動画は二度と保存しない</label>
+            </div>
+            <details class="advanced">
+              <summary>上級者向け</summary>
+              <label>ダウンロード途中のファイルを置く場所<input name="temp_dir" placeholder="空欄なら保存先と同じ場所"><small>保存先が USB メモリや NAS で遅い時に、速い SSD のフォルダを指定すると速くなります。終わったら保存先へ移します。</small></label>
+              <label class="check"><input type="checkbox" name="no_part"> 途中のファイルに .part を付けない</label>
+            </details>
+          </fieldset>
+
+          <fieldset id="sec-region">
+            <legend>地域・言語・VR</legend>
+            <div class="grid2">
+              <label>地域(接続元の国)
+                <select name="region" class="region-select"></select>
+                <small>地域によってタイトルやサムネイル、見られる動画が変わるサイトで使います。</small>
+              </label>
+              <label>動画情報の言語
+                <select name="metadata_lang">
+                  <option value="">サイトに任せる</option>
+                  <option value="ja">日本語</option><option value="en">English</option><option value="ko">한국어</option>
+                  <option value="zh-Hans">简体中文</option><option value="zh-Hant">繁體中文</option><option value="es">Español</option>
+                  <option value="fr">Français</option><option value="de">Deutsch</option><option value="pt">Português</option>
+                  <option value="ru">Русский</option>
+                </select>
+                <small>YouTube の多言語タイトル・地域別サムネイルの選択に使います。</small>
+              </label>
+            </div>
+            <label class="check"><input type="checkbox" name="vr_mode"> VR・360°動画として保存(8K などを優先し、向き情報を残せる MKV で保存)</label>
+          </fieldset>
+
+          <fieldset id="sec-network">
+            <legend>速度・通信</legend>
+            <div class="checks">
+                <label class="check"><input type="checkbox" name="verify_files"> 保存した後に、ファイルが壊れていないか調べる(壊れていたら自動でやり直す)</label>
+                <label class="check"><input type="checkbox" name="remember_methods"> サイトごとにうまくいった取り方を覚えて、次から最初に使う</label>
+            </div>
+            <div class="fn-label">覚えた取り方</div>
+            <ul id="site-methods" class="login-list"></ul>
+            <div class="diagnose-box">
+              <div class="input-row"><input id="diagnose-url" placeholder="うまくいかない動画の URL(空欄でも可)"><button type="button" id="diagnose" class="ghost">接続を診断</button></div>
+              <ul id="diagnosis" class="diagnosis"></ul>
+            </div>
+            <div class="grid2">
+              <label>同時ダウンロード数<input name="max_parallel" type="number" min="1" max="8"></label>
+              <label class="check"><input type="checkbox" name="fast_mode"> 速さ優先(1本を細かく分けて同時に取る)</label>
+              <label>待っているものを始める順番
+                <select name="queue_order">
+                  <option value="added">追加した順</option>
+                  <option value="small">小さいものから</option>
+                  <option value="large">大きいものから</option>
+                </select>
+                <small>大きさが分からないものは最後になります</small>
+              </label>
+              <label>分割ダウンロード数<input name="concurrent_fragments" type="number" min="1" max="16"></label>
+              <label>速度制限(例: 5M)<input name="rate_limit"></label>
+              <label>再試行回数<input name="retries" type="number" min="0" max="100"></label>
+              <label>動画ごとの待ち時間(秒)<input name="sleep_seconds" type="number" min="0"></label>
+              <label>通信タイムアウト(秒、0 で既定)<input name="socket_timeout" type="number" min="0"></label>
+              <label class="check"><input type="checkbox" name="proxy_only"> プロキシだけを通す(プロキシが無い時はつながない)</label>
+              <label>プロキシ<span class="input-row"><input name="proxy" placeholder="socks5://127.0.0.1:1080"><button type="button" class="ghost small proxy-test" data-for="proxy">試す</button></span><small class="proxy-result" data-for="proxy"></small></label>
+              <label>回線のエラーで失敗した時に自動でやり直す回数<input name="auto_retry_count" type="number" min="0" max="10"><small>30 秒・2 分・10 分と間をあけてやり直します。0 でやり直さない</small></label>
+              <label>地域制限の時だけ使うプロキシ<span class="input-row"><input name="fallback_proxy" placeholder="socks5://127.0.0.1:1080"><button type="button" class="ghost small proxy-test" data-for="fallback_proxy">試す</button></span><small class="proxy-result" data-for="fallback_proxy"></small><small>「この国では見られません」で失敗した時だけ、これを通してやり直します</small></label>
+              <label>User-Agent<input name="user_agent"></label>
+              <label>ブラウザ偽装
+                <select name="impersonate">
+                  <option value="auto">自動(失敗した時だけ)</option>
+                  <option value="off">使わない</option>
+                  <option value="chrome">常に Chrome として接続</option>
+                  <option value="edge">常に Edge として接続</option>
+                  <option value="safari">常に Safari として接続</option>
+                  <option value="firefox">常に Firefox として接続</option>
+                </select>
+              </label>
+              <label>cookies.txt の場所<input name="cookies_file"></label>
+            </div>
+            <div class="checks">
+              <label class="check"><input type="checkbox" name="geo_bypass"> 地域制限の回避を試みる</label>
+              <label class="check"><input type="checkbox" name="force_ipv4"> IPv4 で接続する</label>
+            </div>
+          </fieldset>
+
+          <fieldset id="sec-live">
+            <legend>ライブ配信</legend>
+            <div class="checks">
+              <label class="check"><input type="checkbox" name="live_from_start"> 配信の最初から録画する</label>
+              <label class="check"><input type="checkbox" name="wait_for_live"> 開始前の配信は始まるまで待つ</label>
+            </div>
+          </fieldset>
+
+          <fieldset id="sec-phone">
+            <legend>スマホ連携</legend>
+            <p class="muted">無料の通知アプリ「ntfy」を使って、スマホに完了を知らせたり、スマホの共有メニューから PC の Grabbit に URL を送ったりできます。</p>
+            <div class="grid2">
+              <label>トピック名(英数字。他の人に推測されない長めの名前に)<span class="input-row"><input name="ntfy_topic" placeholder="grabbit-xxxxxxxx" spellcheck="false"><button type="button" id="ntfy-generate" class="ghost small">作る</button></span></label>
+              <label>サーバー<input name="ntfy_server" placeholder="https://ntfy.sh"></label>
+            </div>
+            <div class="checks">
+              <label class="check"><input type="checkbox" name="ntfy_notify"> 保存が終わったらスマホに知らせる</label>
+              <label class="check"><input type="checkbox" name="ntfy_receive"> スマホから送った URL を受け取る</label>
+            </div>
+            <div class="row"><button type="button" id="ntfy-test" class="ghost small">テスト通知を送る</button><small id="ntfy-status" class="muted"></small></div>
+            <details class="advanced">
+              <summary>スマホ側の準備</summary>
+              <ol class="steps">
+                <li>スマホに「ntfy」アプリを入れる(Android / iPhone)</li>
+                <li>通知: アプリで「<b class="ntfy-topic-name"></b>」を購読する</li>
+                <li>URL を送る: 動画アプリの「共有」→「ntfy」→ トピックに「<b class="ntfy-send-name"></b>」を入れて送る</li>
+              </ol>
+              <div class="fn-label">iPhone のショートカットで送る(共有メニューから1回で送れます)</div>
+              <ol class="steps">
+                <li>「ショートカット」アプリで新しいショートカットを作り、「共有シートに表示」をオンにして、受け取るものを「URL」にする</li>
+                <li>「URL の内容を取得」を足し、URL に <b class="ntfy-send-url"></b> を入れる</li>
+                <li>方法を「POST」、本文を「ファイル」にして「ショートカットの入力」を選ぶ</li>
+                <li>名前を「Grabbit に送る」にすると、動画アプリの共有メニューから選べます</li>
+              </ol>
+            </details>
+          </fieldset>
+
+          <fieldset id="sec-privacy">
+            <legend>記録・プライバシー</legend>
+            <div class="checks">
+              <label class="check"><input type="checkbox" name="encrypt_records"> 設定・記録を暗号化して保存する(Windows。このパソコンのこのユーザーでしか開けなくなります)</label>
+              <label class="check"><input type="checkbox" name="private_mode"> 記録を残さない(ライブラリ・ログ・覚えた取り方・エラーの統計)</label>
+            </div>
+            <div class="row">
+              <button type="button" id="net-open" class="ghost small">外への通信を見る</button>
+            </div>
+            <div id="net-list" class="perf hidden"></div>
+          </fieldset>
+
+          <fieldset id="sec-move">
+            <legend>設定の引っ越し</legend>
+            <p class="muted">設定・保存プリセット・自動保存の登録を1つのファイルにまとめて、別の PC に移せます。ログイン情報と追加オプションは入りません。</p>
+            <div class="row">
+              <button type="button" id="export-settings" class="ghost">書き出す</button>
+              <button type="button" id="import-settings" class="ghost">読み込む</button>
+              <input type="file" id="import-file" accept=".json,application/json" class="hidden">
+            </div>
+            <small id="move-status" class="muted"></small>
+          </fieldset>
+
+          <fieldset id="sec-advanced">
+            <legend>上級者向け</legend>
+            <div class="row">
+              <button type="button" id="bug-report" class="ghost">不具合報告用の情報をまとめる</button>
+              <button type="button" id="perf-open" class="ghost">動作の重さを見る</button>
+            </div>
+            <div id="perf" class="perf hidden"></div>
+            <div class="fn-label">右クリックメニューに出す項目</div>
+            <div id="menu-editor" class="menu-editor"></div>
+            <label>部品を取る時の代わりの入口(ミラー)<input name="github_mirror" placeholder="https://mirror.example.com"><small>GitHub からの大きなダウンロードが遅い・途中で切れる時に使います。照合用のハッシュだけは GitHub から直接取って確かめるので、すり替えられた物は使いません</small></label>
+            <label>追加オプション(コマンドライン)<small>⚠ 中身の分からないオプションは入れないでください(--exec などはパソコン上でコマンドを実行できます)</small><input name="extra_args" placeholder='--embed-info-json --sub-format "srt"'></label>
+            <button type="button" id="reset" class="ghost">初期設定に戻す</button>
+          </fieldset>
+      </form>
+      </div>
+    </section>
+  </div>
+
+  <template id="job-template">
+    <li class="job">
+      <div class="thumb-wrap"><img class="thumb" alt=""><span class="state-icon"></span></div>
+      <div class="info">
+        <div class="title-row"><img class="favicon" alt=""><span class="title"></span><span class="engine badge"></span></div>
+        <div class="bar"><span></span></div>
+        <div class="meta"></div>
+        <div class="sub muted"></div>
+      </div>
+      <div class="actions"></div>
+    </li>
+  </template>
+
+
+
+  <script src="i18n.js"></script>
+  <script src="lang/en.js"></script>
+  <script src="lang/zh-CN.js"></script>
+  <script src="lang/zh-TW.js"></script>
+  <script src="lang/ko.js"></script>
+  <script src="lang/es.js"></script>
+  <script src="lang/fr.js"></script>
+  <script src="lang/de.js"></script>
+  <script src="lang/pt.js"></script>
+  <script src="lang/ru.js"></script>
+  <script src="lang/extra.js"></script>
+  <script src="filename.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
